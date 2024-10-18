@@ -4,6 +4,7 @@ import contextlib
 import dataclasses
 import functools
 import io
+import itertools
 import re
 import sys
 import traceback
@@ -178,6 +179,9 @@ class ClientRequest:
     }
     POST_METHODS = {hdrs.METH_PATCH, hdrs.METH_POST, hdrs.METH_PUT}
     ALL_METHODS = GET_METHODS.union(POST_METHODS).union({hdrs.METH_DELETE})
+    _HOST_STRINGS = frozenset(
+        map("".join, itertools.product(*zip("host".upper(), "host".lower())))
+    )
 
     DEFAULT_HEADERS = {
         hdrs.ACCEPT: "*/*",
@@ -280,17 +284,11 @@ class ClientRequest:
         return self.__writer
 
     @_writer.setter
-    def _writer(self, writer: Optional["asyncio.Task[None]"]) -> None:
+    def _writer(self, writer: "asyncio.Task[None]") -> None:
         if self.__writer is not None:
             self.__writer.remove_done_callback(self.__reset_writer)
         self.__writer = writer
-        if writer is None:
-            return
-        if writer.done():
-            # The writer is already done, so we can reset it immediately.
-            self.__reset_writer()
-        else:
-            writer.add_done_callback(self.__reset_writer)
+        writer.add_done_callback(self.__reset_writer)
 
     def is_ssl(self) -> bool:
         return self.url.scheme in _SSL_SCHEMES
@@ -306,14 +304,17 @@ class ClientRequest:
         else:
             h = None
         url = self.url
-        return ConnectionKey(
-            url.raw_host or "",
-            url.port,
-            url.scheme in _SSL_SCHEMES,
-            self._ssl,
-            self.proxy,
-            self.proxy_auth,
-            h,
+        return tuple.__new__(
+            ConnectionKey,
+            (
+                url.raw_host or "",
+                url.port,
+                url.scheme in _SSL_SCHEMES,
+                self._ssl,
+                self.proxy,
+                self.proxy_auth,
+                h,
+            ),
         )
 
     @property
@@ -395,7 +396,7 @@ class ClientRequest:
 
         for key, value in headers:  # type: ignore[misc]
             # A special case for Host header
-            if key.lower() == "host":
+            if key in self._HOST_STRINGS:
                 self.headers[key] = value
             else:
                 self.headers.add(key, value)
@@ -697,6 +698,7 @@ class ClientRequest:
         await writer.write_headers(status_line, self.headers)
         coro = self.write_bytes(writer, conn)
 
+        task: Optional["asyncio.Task[None]"]
         if sys.version_info >= (3, 12):
             # Optimization for Python 3.12, try to write
             # bytes immediately to avoid having to schedule
@@ -705,7 +707,11 @@ class ClientRequest:
         else:
             task = self.loop.create_task(coro)
 
-        self._writer = task
+        if task.done():
+            task = None
+        else:
+            self._writer = task
+
         response_class = self.response_class
         assert response_class is not None
         self.response = response_class(
@@ -781,7 +787,7 @@ class ClientResponse(HeadersMixin):
         method: str,
         url: URL,
         *,
-        writer: "asyncio.Task[None]",
+        writer: "Optional[asyncio.Task[None]]",
         continue100: Optional["asyncio.Future[bool]"],
         timer: Optional[BaseTimerContext],
         request_info: RequestInfo,
@@ -798,7 +804,8 @@ class ClientResponse(HeadersMixin):
         self._real_url = url
         self._url = url.with_fragment(None) if url.raw_fragment else url
         self._body: Optional[bytes] = None
-        self._writer = writer
+        if writer is not None:
+            self._writer = writer
         self._continue = continue100  # None by default
         self._closed = True
         self._history: Tuple[ClientResponse, ...] = ()
@@ -842,8 +849,8 @@ class ClientResponse(HeadersMixin):
         if writer is None:
             return
         if writer.done():
-            # The writer is already done, so we can reset it immediately.
-            self.__reset_writer()
+            # The writer is already done, so we can clear it immediately.
+            self.__writer = None
         else:
             writer.add_done_callback(self.__reset_writer)
 

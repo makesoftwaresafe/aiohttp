@@ -36,7 +36,7 @@ cffi==1.17.1
     #   pycares
 cfgv==3.4.0
     # via pre-commit
-charset-normalizer==3.3.2
+charset-normalizer==3.4.0
     # via requests
 cherry-picker==2.2.0
     # via -r requirements/dev.in
@@ -58,7 +58,7 @@ cryptography==43.0.1
     #   trustme
 cython==3.0.11
     # via -r requirements/cython.in
-distlib==0.3.8
+distlib==0.3.9
     # via virtualenv
 docutils==0.20.1
     # via sphinx
@@ -138,7 +138,7 @@ propcache==0.2.0
     # via
     #   -r requirements/runtime-deps.in
     #   yarl
-proxy-py==2.4.8
+proxy-py==2.4.9
     # via
     #   -r requirements/lint.in
     #   -r requirements/test.in
@@ -261,7 +261,7 @@ uritemplate==4.1.1
     # via gidgethub
 urllib3==2.2.3
     # via requests
-uvloop==0.21.0b1 ; platform_system != "Windows"
+uvloop==0.21.0 ; platform_system != "Windows"
     # via
     #   -r requirements/base.in
     #   -r requirements/lint.in
@@ -273,7 +273,7 @@ wait-for-it==2.2.2
     # via -r requirements/test.in
 wheel==0.44.0
     # via pip-tools
-yarl==1.14.0
+yarl==1.15.2
     # via -r requirements/runtime-deps.in
 zipp==3.20.2
     # via

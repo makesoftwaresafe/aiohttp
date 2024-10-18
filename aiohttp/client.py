@@ -44,6 +44,7 @@ from .client_exceptions import (
     ClientConnectionError,
     ClientConnectionResetError,
     ClientConnectorCertificateError,
+    ClientConnectorDNSError,
     ClientConnectorError,
     ClientConnectorSSLError,
     ClientError,
@@ -110,6 +111,7 @@ __all__ = (
     "ClientConnectionError",
     "ClientConnectionResetError",
     "ClientConnectorCertificateError",
+    "ClientConnectorDNSError",
     "ClientConnectorError",
     "ClientConnectorSSLError",
     "ClientError",
@@ -229,6 +231,7 @@ class ClientSession:
 
     __slots__ = (
         "_base_url",
+        "_base_url_origin",
         "_source_traceback",
         "_connector",
         "_loop",
@@ -293,10 +296,12 @@ class ClientSession:
         self._connector: Optional[BaseConnector] = None
         if base_url is None or isinstance(base_url, URL):
             self._base_url: Optional[URL] = base_url
+            self._base_url_origin = None if base_url is None else base_url.origin()
         else:
             self._base_url = URL(base_url)
+            self._base_url_origin = self._base_url.origin()
             assert (
-                self._base_url.origin() == self._base_url
+                self._base_url_origin == self._base_url
             ), "Only absolute URLs without path part are supported"
 
         loop = asyncio.get_running_loop()
@@ -330,7 +335,7 @@ class ClientSession:
             cookie_jar = CookieJar()
         self._cookie_jar = cookie_jar
 
-        if cookies is not None:
+        if cookies:
             self._cookie_jar.update_cookies(cookies)
 
         self._connector_owner = connector_owner
@@ -564,8 +569,12 @@ class ClientSession:
                     if auth is None:
                         auth = auth_from_url
 
-                    if auth is None and (
-                        not self._base_url or self._base_url.origin() == url.origin()
+                    if (
+                        auth is None
+                        and self._default_auth
+                        and (
+                            not self._base_url or self._base_url_origin == url.origin()
+                        )
                     ):
                         auth = self._default_auth
                     # It would be confusing if we support explicit
@@ -670,7 +679,8 @@ class ClientSession:
                             raise
                         raise ClientOSError(*exc.args) from exc
 
-                    self._cookie_jar.update_cookies(resp.cookies, resp.url)
+                    if cookies := resp.cookies:
+                        self._cookie_jar.update_cookies(cookies, resp.url)
 
                     # redirects
                     if resp.status in (301, 302, 303, 307, 308) and allow_redirects:
@@ -740,8 +750,8 @@ class ClientSession:
                             ) from origin_val_err
 
                         if (
-                            url.origin() != redirect_origin
-                            and not is_same_host_https_redirect
+                            not is_same_host_https_redirect
+                            and url.origin() != redirect_origin
                         ):
                             auth = None
                             headers.pop(hdrs.AUTHORIZATION, None)
